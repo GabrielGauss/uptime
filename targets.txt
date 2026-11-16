@@ -1,0 +1,6 @@
+# name | url | expected HTTP status
+MacroPulse API health | https://api.macropulse.live/health | 200
+MacroPulse site | https://macropulse.live/ | 200
+Norve site | https://norve.dev/ | 200
+IRL engine health | https://norve.dev/irl/health | 200
+IRL public anchors | https://norve.dev/api/anchors | 200

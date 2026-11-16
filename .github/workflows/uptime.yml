@@ -1,0 +1,53 @@
+name: uptime
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  actions: write
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check targets
+        run: bash check.sh
+
+      - name: Open or update the incident issue
+        if: hashFiles('failures.md') != ''
+        run: |
+          if [ ! -s failures.md ]; then exit 0; fi
+          gh label create down --color B60205 --description "Uptime incident" 2>/dev/null || true
+          open=$(gh issue list --label down --state open --json number --jq '.[0].number')
+          body="$(printf 'Detected %s UTC\n\n%s\n\nRun: %s/%s/actions/runs/%s' "$(date -u '+%Y-%m-%d %H:%M')" "$(cat failures.md)" "$GITHUB_SERVER_URL" "$GH_REPO" "$GITHUB_RUN_ID")"
+          if [ -z "$open" ]; then
+            gh issue create --title "DOWN: $(head -1 failures.md | sed -E 's/^- \*\*([^*]+)\*\*.*/\1/')" --label down --body "$body"
+          else
+            gh issue comment "$open" --body "$body"
+          fi
+
+      - name: Close the incident issue on recovery
+        run: |
+          if [ -s failures.md ]; then exit 0; fi
+          for n in $(gh issue list --label down --state open --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Recovered at $(date -u '+%Y-%m-%d %H:%M') UTC: all targets OK."
+          done
+
+      - name: Keep the schedule alive
+        # GitHub disables scheduled workflows after 60 days without repo
+        # activity; re-enabling on every run prevents that.
+        run: gh api -X PUT "repos/$GH_REPO/actions/workflows/uptime.yml/enable" || true
